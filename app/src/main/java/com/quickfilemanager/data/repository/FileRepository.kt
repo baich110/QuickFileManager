@@ -1,8 +1,9 @@
 package com.quickfilemanager.data.repository
 
-import android.os.Build
+import android.content.Context
 import android.os.Environment
 import android.os.StatFs
+import android.os.storage.StorageManager
 import com.quickfilemanager.domain.model.FileItem
 import com.quickfilemanager.domain.model.OperationResult
 import com.quickfilemanager.domain.model.StorageInfo
@@ -50,28 +51,50 @@ class FileRepository @Inject constructor() {
         val internalPath = Environment.getExternalStorageDirectory().absolutePath
         storageList.add(getStorageInfo(internalPath, "内部存储"))
 
-        // 外部存储（Android 11+ 使用不同API）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val externalDirs = Environment.getExternalStorageDirectories()
-            externalDirs?.forEachIndexed { index, path ->
-                if (path != internalPath) {
-                    storageList.add(getStorageInfo(path, "SD卡 ${index + 1}", isRemovable = true))
+        // 使用反射获取外部存储目录
+        try {
+            val storageManager = Environment.getExternalStorageDirectory().let { 
+                it.parentFile?.let { parent -> 
+                    File(parent, "storage")
+                } ?: File("/storage")
+            }
+            
+            if (storageManager.exists()) {
+                storageManager.listFiles()?.forEach { file ->
+                    if (file.isDirectory && file.canRead()) {
+                        val name = file.name
+                        if (name != "emulated" && name != "self") {
+                            storageList.add(getStorageInfo(file.absolutePath, name, isRemovable = true))
+                        }
+                    }
                 }
             }
+        } catch (e: Exception) {
+            // 忽略获取外部存储时的异常
         }
 
         storageList
     }
 
     private fun getStorageInfo(path: String, label: String, isRemovable: Boolean = false): StorageInfo {
-        val stat = StatFs(path)
-        return StorageInfo(
-            path = path,
-            label = label,
-            totalSpace = stat.blockSizeLong * stat.blockCountLong,
-            freeSpace = stat.blockSizeLong * stat.availableBlocksLong,
-            isRemovable = isRemovable
-        )
+        return try {
+            val stat = StatFs(path)
+            StorageInfo(
+                path = path,
+                label = label,
+                totalSpace = stat.blockSizeLong * stat.blockCountLong,
+                freeSpace = stat.blockSizeLong * stat.availableBlocksLong,
+                isRemovable = isRemovable
+            )
+        } catch (e: Exception) {
+            StorageInfo(
+                path = path,
+                label = label,
+                totalSpace = 0,
+                freeSpace = 0,
+                isRemovable = isRemovable
+            )
+        }
     }
 
     /**
@@ -105,7 +128,6 @@ class FileRepository @Inject constructor() {
             }
 
             if (file.isDirectory) {
-                // 删除文件夹内容
                 file.listFiles()?.forEach { child ->
                     deleteRecursively(child)
                 }
@@ -215,7 +237,6 @@ class FileRepository @Inject constructor() {
             if (source.renameTo(target)) {
                 OperationResult.Success("已移动到: ${target.absolutePath}")
             } else {
-                // 如果直接移动失败，尝试复制后删除
                 copyAndDelete(source, target)
             }
         } catch (e: Exception) {
@@ -223,8 +244,8 @@ class FileRepository @Inject constructor() {
         }
     }
 
-    private suspend fun copyAndDelete(source: File, target: File): OperationResult = withContext(Dispatchers.IO) {
-        try {
+    private fun copyAndDelete(source: File, target: File): OperationResult {
+        return try {
             source.copyRecursively(target, overwrite = true)
             source.deleteRecursively()
             OperationResult.Success("已移动到: ${target.absolutePath}")
