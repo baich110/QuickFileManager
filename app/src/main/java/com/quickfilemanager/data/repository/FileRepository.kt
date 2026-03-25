@@ -1,5 +1,6 @@
 package com.quickfilemanager.data.repository
 
+import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import com.quickfilemanager.domain.model.FileItem
@@ -49,11 +50,13 @@ class FileRepository @Inject constructor() {
         val internalPath = Environment.getExternalStorageDirectory().absolutePath
         storageList.add(getStorageInfo(internalPath, "内部存储"))
 
-        // 外部存储（如果有）
-        val externalDirs = Environment.getExternalStorageDirectories()
-        externalDirs?.forEachIndexed { index, path ->
-            if (path != internalPath) {
-                storageList.add(getStorageInfo(path, "SD卡 ${index + 1}", isRemovable = true))
+        // 外部存储（Android 11+ 使用不同API）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val externalDirs = Environment.getExternalStorageDirectories()
+            externalDirs?.forEachIndexed { index, path ->
+                if (path != internalPath) {
+                    storageList.add(getStorageInfo(path, "SD卡 ${index + 1}", isRemovable = true))
+                }
             }
         }
 
@@ -220,8 +223,8 @@ class FileRepository @Inject constructor() {
         }
     }
 
-    private suspend fun copyAndDelete(source: File, target: File): OperationResult {
-        return try {
+    private suspend fun copyAndDelete(source: File, target: File): OperationResult = withContext(Dispatchers.IO) {
+        try {
             source.copyRecursively(target, overwrite = true)
             source.deleteRecursively()
             OperationResult.Success("已移动到: ${target.absolutePath}")
