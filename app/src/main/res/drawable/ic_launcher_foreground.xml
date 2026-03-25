@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Folder icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,30h20l4,4h14c2.2,0 4,1.8 4,4v32c0,2.2 -1.8,4 -4,4H44c-2.2,0 -4,-1.8 -4,-4V34c0,-2.2 1.8,-4 4,-4z"/>
+    <path
+        android:fillColor="#BBDEFB"
+        android:pathData="M42,40h28v30H42z"/>
+    <!-- File lines -->
+    <path
+        android:fillColor="#1976D2"
+        android:pathData="M48,48h16v2H48zM48,54h16v2H48zM48,60h10v2H48z"/>
+</vector>
