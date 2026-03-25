@@ -38,7 +38,6 @@ import com.quickfilemanager.domain.model.StorageInfo
 import com.quickfilemanager.viewmodel.ClipboardAction
 import com.quickfilemanager.viewmodel.FileViewModel
 import com.quickfilemanager.viewmodel.SortType
-import com.quickfilemanager.viewmodel.ViewMode
 import java.text.SimpleDateFormat
 import java.util.*
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -118,7 +117,6 @@ Tab(selected = index == uiState.currentTabIndex, onClick = { viewModel.switchToT
                 if (!showSearchBar && !uiState.isSelectionMode) {
                     IconButton(onClick = { showSearchBar = true }) { Icon(Icons.Default.Search, "搜索") }
                     IconButton(onClick = { showSortDialog = true }) { Icon(Icons.Default.Sort, "排序") }
-                    IconButton(onClick = { viewModel.setViewMode(if (uiState.currentViewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST) }) { Icon(if (uiState.currentViewMode == ViewMode.LIST) Icons.Default.GridView else Icons.Default.ViewList, "视图") }
                     var showMenu by remember { mutableStateOf(false) }
                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "更多") }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
