@@ -5,6 +5,7 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -31,6 +32,3 @@ jobs:
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/*.apk
-
-# Auto-trigger build at 1774426793
-# Trigger 1774427237
