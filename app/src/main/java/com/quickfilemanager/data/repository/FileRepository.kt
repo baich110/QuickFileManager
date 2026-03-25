@@ -1,9 +1,7 @@
 package com.quickfilemanager.data.repository
 
-import android.content.Context
 import android.os.Environment
 import android.os.StatFs
-import android.os.storage.StorageManager
 import com.quickfilemanager.domain.model.FileItem
 import com.quickfilemanager.domain.model.OperationResult
 import com.quickfilemanager.domain.model.StorageInfo
@@ -53,14 +51,14 @@ class FileRepository @Inject constructor() {
 
         // 使用反射获取外部存储目录
         try {
-            val storageManager = Environment.getExternalStorageDirectory().let { 
+            val storageDir = Environment.getExternalStorageDirectory().let { 
                 it.parentFile?.let { parent -> 
                     File(parent, "storage")
                 } ?: File("/storage")
             }
             
-            if (storageManager.exists()) {
-                storageManager.listFiles()?.forEach { file ->
+            if (storageDir.exists()) {
+                storageDir.listFiles()?.forEach { file ->
                     if (file.isDirectory && file.canRead()) {
                         val name = file.name
                         if (name != "emulated" && name != "self") {
@@ -192,8 +190,17 @@ class FileRepository @Inject constructor() {
             val target = File(targetDir, source.name)
 
             if (source.isDirectory) {
-                copyDirectory(source, target) { current, total, name ->
-                    emit(OperationResult.Progress(current, total, name))
+                val files = source.listFiles() ?: emptyArray()
+                var current = 0
+                files.forEachIndexed { index, file ->
+                    val dest = File(target, file.name)
+                    if (file.isDirectory) {
+                        file.copyRecursively(dest, overwrite = true)
+                    } else {
+                        file.copyTo(dest, overwrite = true)
+                    }
+                    current++
+                    emit(OperationResult.Progress(current, files.size, file.name))
                 }
             } else {
                 source.copyTo(target, overwrite = true)
@@ -202,23 +209,6 @@ class FileRepository @Inject constructor() {
             emit(OperationResult.Success("已复制到: ${target.absolutePath}"))
         } catch (e: Exception) {
             emit(OperationResult.Error("复制失败: ${e.message}", e))
-        }
-    }
-
-    private fun copyDirectory(source: File, target: File, onProgress: (Int, Int, String) -> Unit) {
-        if (!target.exists()) {
-            target.mkdirs()
-        }
-
-        val files = source.listFiles() ?: return
-        files.forEachIndexed { index, file ->
-            val dest = File(target, file.name)
-            if (file.isDirectory) {
-                copyDirectory(file, dest, onProgress)
-            } else {
-                file.copyTo(dest, overwrite = true)
-            }
-            onProgress(index + 1, files.size, file.name)
         }
     }
 
@@ -237,18 +227,11 @@ class FileRepository @Inject constructor() {
             if (source.renameTo(target)) {
                 OperationResult.Success("已移动到: ${target.absolutePath}")
             } else {
-                copyAndDelete(source, target)
+                // 复制后删除
+                source.copyRecursively(target, overwrite = true)
+                source.deleteRecursively()
+                OperationResult.Success("已移动到: ${target.absolutePath}")
             }
-        } catch (e: Exception) {
-            OperationResult.Error("移动失败: ${e.message}", e)
-        }
-    }
-
-    private fun copyAndDelete(source: File, target: File): OperationResult {
-        return try {
-            source.copyRecursively(target, overwrite = true)
-            source.deleteRecursively()
-            OperationResult.Success("已移动到: ${target.absolutePath}")
         } catch (e: Exception) {
             OperationResult.Error("移动失败: ${e.message}", e)
         }
