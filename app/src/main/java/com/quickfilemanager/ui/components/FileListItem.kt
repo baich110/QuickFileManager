@@ -9,6 +9,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,10 +39,15 @@ fun FileListItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onFavoriteClick: (() -> Unit)? = null,
+    onCopyClick: (() -> Unit)? = null,
+    onCutClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
+    onRenameClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
     val dateStr = dateFormat.format(Date(file.lastModified))
+    var showMenu by remember { mutableStateOf(false) }
     
     // 无障碍描述
     val semanticsDesc = if (isSelectionMode) {
@@ -47,7 +56,7 @@ fun FileListItem(
     } else {
         file.accessibleName
     }
-
+    
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -72,14 +81,14 @@ fun FileListItem(
             if (isSelectionMode) {
                 Checkbox(
                     checked = isSelected,
-                    onCheckedChange = null, // 点击由父组件处理
+                    onCheckedChange = null,
                     modifier = Modifier.semantics { 
                         role = Role.Checkbox 
                     }
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             }
-
+            
             // 文件类型图标
             Box(
                 modifier = Modifier
@@ -90,14 +99,14 @@ fun FileListItem(
             ) {
                 Icon(
                     imageVector = getFileTypeIcon(file),
-                    contentDescription = null, // 图标装饰性
+                    contentDescription = null,
                     tint = getFileTypeColor(file),
                     modifier = Modifier.size(28.dp)
                 )
             }
-
+            
             Spacer(modifier = Modifier.width(12.dp))
-
+            
             // 文件信息
             Column(
                 modifier = Modifier.weight(1f)
@@ -136,14 +145,88 @@ fun FileListItem(
                 )
             }
             
-            // 收藏图标
-            if (!file.isDirectory && onFavoriteClick != null && !isSelectionMode) {
-                IconButton(onClick = onFavoriteClick) {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = if (isFavorite) "取消收藏" else "收藏",
-                        tint = if (isFavorite) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            // 操作菜单按钮
+            if (!isSelectionMode) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "更多操作",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        // 收藏
+                        if (onFavoriteClick != null && !file.isDirectory) {
+                            DropdownMenuItem(
+                                text = { Text(if (isFavorite) "取消收藏" else "收藏") },
+                                onClick = {
+                                    onFavoriteClick()
+                                    showMenu = false
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                        contentDescription = null
+                                    )
+                                }
+                            )
+                        }
+                        // 复制
+                        if (onCopyClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("复制") },
+                                onClick = {
+                                    onCopyClick()
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
+                            )
+                        }
+                        // 剪切
+                        if (onCutClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("剪切") },
+                                onClick = {
+                                    onCutClick()
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.ContentCut, null) }
+                            )
+                        }
+                        // 重命名
+                        if (onRenameClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("重命名") },
+                                onClick = {
+                                    onRenameClick()
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, null) }
+                            )
+                        }
+                        // 删除
+                        if (onDeleteClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    onDeleteClick()
+                                    showMenu = false
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -157,13 +240,13 @@ fun FileListItem(
 fun getFileTypeIcon(file: FileItem): ImageVector {
     return when {
         file.isDirectory -> Icons.Default.Folder
-        file.extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp") -> Icons.Default.Image
-        file.extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv") -> Icons.Default.VideoFile
-        file.extension in listOf("mp3", "wav", "ogg", "flac", "aac", "m4a") -> Icons.Default.AudioFile
+        file.extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif") -> Icons.Default.Image
+        file.extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "3gp", "webm") -> Icons.Default.VideoFile
+        file.extension in listOf("mp3", "wav", "ogg", "flac", "aac", "m4a", "amr") -> Icons.Default.AudioFile
         file.extension in listOf("pdf") -> Icons.Default.PictureAsPdf
         file.extension in listOf("doc", "docx", "txt", "rtf", "odt") -> Icons.Default.Description
         file.extension in listOf("xls", "xlsx", "csv") -> Icons.Default.TableChart
-        file.extension in listOf("zip", "rar", "7z", "tar", "gz") -> Icons.Default.Archive
+        file.extension in listOf("zip", "rar", "7z", "tar", "gz", "bz2") -> Icons.Default.Archive
         file.extension in listOf("apk") -> Icons.Default.Android
         file.extension in listOf("html", "css", "js", "xml", "json") -> Icons.Default.Code
         else -> Icons.Default.InsertDriveFile
@@ -177,11 +260,12 @@ fun getFileTypeIcon(file: FileItem): ImageVector {
 fun getFileTypeColor(file: FileItem): Color {
     return when {
         file.isDirectory -> FolderColor
-        file.extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp") -> ImageColor
-        file.extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv") -> VideoColor
-        file.extension in listOf("mp3", "wav", "ogg", "flac", "aac", "m4a") -> AudioColor
+        file.extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif") -> ImageColor
+        file.extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "3gp", "webm") -> VideoColor
+        file.extension in listOf("mp3", "wav", "ogg", "flac", "aac", "m4a", "amr") -> AudioColor
         file.extension in listOf("pdf", "doc", "docx", "txt", "xls", "xlsx") -> DocumentColor
-        file.extension in listOf("zip", "rar", "7z", "tar", "gz") -> ArchiveColor
+        file.extension in listOf("zip", "rar", "7z", "tar", "gz", "bz2") -> ArchiveColor
+        file.extension == "apk" -> Color(0xFF4CAF50)
         else -> UnknownColor
     }
 }
