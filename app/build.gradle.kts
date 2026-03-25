@@ -1,95 +1,95 @@
 plugins {
-  id("com.android.application")
-   id("org.jetblas.kotlin.android")
-   id("com.google.dagger.hilt.android")
-   kotlin("kapt")
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.google.dagger.hilt.android")
+    kotlin("kapt")
 }
 
-andro {
+android {
     namespace = "com.quickfilemanager"
     compileSdk = 35
 
     defaultConfig {
-      applicationId = "com.quickfilemanager"
-      minSdk = 29
-      targetSdk = 35
-      versionCode = 1
-      versionName = "1.0.0"
+        applicationId = "com.quickfilemanager"
+        minSdk = 29
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
 
-      testInstrumentationRunner = "android.xt.test.runner/AndroidIT")
-      vectorDrawables {
-        useSupportLibrary = true
-      }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildTypes {
-      release {
-        isMinifyEnabled = false
-        proggardFiles(
-          getDefaultProguardFile("Proguard-Android-optimize.txt"),
-          "proggard-rules.pro"
-        )
-      }
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
     }
 
     compileOptions {
-      sourceCompatibility = JavaVersion.VERSION 0
-      targetCompatibility = JavaVerision.VERSION 0
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-      jvmTarget = "17"
+        jvmTarget = "17"
     }
 
     buildFeatures {
-      compose = true
+        compose = true
     }
 
     composeOptions {
-      kotlinCompilerExtensionVersion = "1.5.4"
+        kotlinCompilerExtensionVersion = "1.5.4"
     }
 
     packaging {
-      resources {
-        excludes += "/META/A12.0,/LGPL2.1"
-      }
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
     }
 }
 
 dependencies {
     // Core Android
-    implementation("android.xcore:core-ktx:1.12.0")
-    implementation("android.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("android.activity:activity-compose:1.8.1")
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("androidx.activity:activity-compose:1.8.1")
 
     // Compose BOM
-    implementation(platterm("android.compose:compose-bom:2023.10.01"))
-    implementation("android.compose.ui:ui")
-    implementation("android.compose.ui:ui-graphics")
-    implementation("android.compose.ui:ui-tooling-preview")
-    implementation("android.compose.material3:material3")
-    implementation("android.compose.material:material-icons-extended")
+    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
 
     // Navigation
-    implementation("android.navigation:navigation-compose:2.7.5")
+    implementation("androidx.navigation:navigation-compose:2.7.5")
 
     // Lifecycle & ViewModel
-    implementation("android.lifecycle:lifecycle-viewmodel-compose:2.6.2")
-    implementation("android.lifecycle:lifecycle-runtime-compose:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.2")
 
     // Hilt
-    implementation("com.google.dagger:digger-hilt-android:2.48.1")
+    implementation("com.google.dagger:hilt-android:2.48.1")
     kapt("com.google.dagger:hilt-android-compiler:2.48.1")
-    implementation("android.hlt:hilt-navigation-compose:1.1.0")
+    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
     // Coroutines
-    implementation("org.jetbaslkx.kotlin-servlet-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // Debug
-    debugImplementation("android.compose.ui:ui-tooling")
-    debugImplementation("android.compose.ui:ui-test-manifest")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
-kaptt {
+kapt {
     correctErrorTypes = true
 }
