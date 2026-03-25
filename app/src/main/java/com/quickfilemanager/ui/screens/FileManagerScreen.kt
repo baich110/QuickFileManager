@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,9 +25,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.quickfilemanager.domain.model.FileItem
 import com.quickfilemanager.domain.model.OperationResult
@@ -37,7 +41,6 @@ import com.quickfilemanager.viewmodel.SortType
 import com.quickfilemanager.viewmodel.ViewMode
 import java.text.SimpleDateFormat
 import java.util.*
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FileManagerScreen(viewModel: FileViewModel = hiltViewModel()) {
@@ -91,9 +94,7 @@ fun FileManagerScreen(viewModel: FileViewModel = hiltViewModel()) {
             if (uiState.tabs.size > 1) {
                 ScrollableTabRow(selectedTabIndex = uiState.currentTabIndex, edgePadding = 8.dp) {
                     uiState.tabs.forEachIndexed { index, tab ->
-                        Tab(selected = index == uiState.currentTabIndex, onClick = { viewModel.switchToTab(index) },
-                            text = { Text(tab.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            trailingIcon = { if (uiState.tabs.size > 1) IconButton(onClick = { viewModel.closeTab(index) }, modifier = Modifier.size(18.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(14.dp)) } })
+Tab(selected = index == uiState.currentTabIndex, onClick = { viewModel.switchToTab(index) }, text = { Text(tab.name, maxLines = 1, overflow = TextOverflow.Ellipsis) })
                     }
                     Tab(selected = false, onClick = { viewModel.addNewTab() }, icon = { Icon(Icons.Default.Add, null) })
                 }
@@ -128,7 +129,7 @@ fun FileManagerScreen(viewModel: FileViewModel = hiltViewModel()) {
                 if (uiState.isSelectionMode) {
                     IconButton(onClick = { viewModel.selectAll() }) { Icon(Icons.Default.SelectAll, "全选") }
                     IconButton(onClick = { viewModel.copyToClipboard(uiState.selectedFiles) }) { Icon(Icons.Default.ContentCopy, "复制") }
-                    IconButton(onClick = { viewModel.cutToClipboard(uiState.selectedFiles) }) { Icon(Icons.Default.Cut, "剪切") }
+                    IconButton(onClick = { viewModel.cutToClipboard(uiState.selectedFiles) }) { Icon(Icons.Default.ContentCut, "剪切") }
                     IconButton(onClick = { viewModel.deleteFiles(uiState.selectedFiles) }) { Icon(Icons.Default.Delete, "删除") }
                 }
             })
@@ -173,7 +174,7 @@ fun FileManagerScreen(viewModel: FileViewModel = hiltViewModel()) {
     if (showRenameDialog) RenameDialog(currentName = renameTarget.substringAfterLast("/"), newName = renameNewName, onDismiss = { showRenameDialog = false }, onNameChange = { renameNewName = it }, onConfirm = { viewModel.rename(renameTarget, it); showRenameDialog = false })
     if (showSortDialog) SortDialog(currentSort = uiState.sortType, onSortSelected = { viewModel.setSortType(it); showSortDialog = false }, onDismiss = { showSortDialog = false })
     if (showFileInfoDialog && infoFileItem != null) FileInfoDialog(file = infoFileItem!!, isFavorite = viewModel.isFavorite(infoFileItem!!.path), onFavoriteToggle = { viewModel.toggleFavorite(infoFileItem!!.path) }, onDismiss = { showFileInfoDialog = false; infoFileItem = null })
-    if (showStoragePickerDialog) StoragePickerDialog(storageList = uiState.storageList, onStorageSelected = { viewModel.navigateToFolder(it); showStoragePickerDialog = false }, onDismiss = { showStoragePickerDialog = false })
+    if (showStoragePickerDialog) StoragePickerDialog(storageList = uiState.storageList, onStorageSelected = { path -> viewModel.navigateToFolder(path); showStoragePickerDialog = false }, onDismiss = { showStoragePickerDialog = false })
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -191,7 +192,7 @@ fun FileItemRow(file: FileItem, isSelected: Boolean, isSelectionMode: Boolean, i
             Box { IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "更多") }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(text = { Text("打开") }, onClick = { onClick(); showMenu = false }, leadingIcon = { Icon(Icons.Default.FolderOpen, null) })
-                    if (!isSelectionMode) { DropdownMenuItem(text = { Text("复制") }, onClick = { onCopy(); showMenu = false }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) }); DropdownMenuItem(text = { Text("剪切") }, onClick = { onCut(); showMenu = false }, leadingIcon = { Icon(Icons.Default.Cut, null) }); DropdownMenuItem(text = { Text("重命名") }, onClick = { onRename(); showMenu = false }, leadingIcon = { Icon(Icons.Default.Edit, null) }) }
+                    if (!isSelectionMode) { DropdownMenuItem(text = { Text("复制") }, onClick = { onCopy(); showMenu = false }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) }); DropdownMenuItem(text = { Text("剪切") }, onClick = { onCut(); showMenu = false }, leadingIcon = { Icon(Icons.Default.ContentCut, null) }); DropdownMenuItem(text = { Text("重命名") }, onClick = { onRename(); showMenu = false }, leadingIcon = { Icon(Icons.Default.Edit, null) }) }
                     DropdownMenuItem(text = { Text(if (isFavorite) "取消收藏" else "收藏") }, onClick = { onFavorite(); showMenu = false }, leadingIcon = { Icon(if (isFavorite) Icons.Default.Star else Icons.Default.StarOutline, null) })
                     DropdownMenuItem(text = { Text("详情") }, onClick = { onInfo(); showMenu = false }, leadingIcon = { Icon(Icons.Default.Info, null) })
                     if (!isSelectionMode) { Divider(); DropdownMenuItem(text = { Text("删除", color = MaterialTheme.colorScheme.error) }, onClick = { onDelete(); showMenu = false }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }) }
@@ -204,7 +205,7 @@ fun FileItemRow(file: FileItem, isSelected: Boolean, isSelectionMode: Boolean, i
 fun getFileIcon(extension: String): ImageVector = when { extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp") -> Icons.Default.Image; extension in listOf("mp4", "avi", "mkv", "mov", "wmv") -> Icons.Default.VideoFile; extension in listOf("mp3", "wav", "ogg", "flac", "aac", "m4a") -> Icons.Default.AudioFile; extension in listOf("pdf") -> Icons.Default.PictureAsPdf; extension in listOf("doc", "docx", "txt", "rtf") -> Icons.Default.Description; extension in listOf("xls", "xlsx", "csv") -> Icons.Default.TableChart; extension in listOf("zip", "rar", "7z", "tar", "gz") -> Icons.Default.Archive; extension in listOf("apk") -> Icons.Default.Android; extension in listOf("html", "css", "js", "xml", "json") -> Icons.Default.Code; else -> Icons.Default.InsertDriveFile }
 
 @Composable
-fun StorageIndicator(storageInfo: StorageInfo, modifier: Modifier = Modifier) { Card(modifier = modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))) { Column(modifier = Modifier.padding(12.dp)) { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(text = storageInfo.label, style = MaterialTheme.typography.labelMedium); Text(text = "${formatBytes(storageInfo.freeSpace)} 可用", style = MaterialTheme.typography.labelMedium) }; Spacer(Modifier.height(8.dp)); LinearProgressIndicator(progress = { storageInfo.usedPercentage / 100f }, modifier = Modifier.fillMaxWidth()) } } }
+fun StorageIndicator(storageInfo: StorageInfo, modifier: Modifier = Modifier) { Card(modifier = modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))) { Column(modifier = Modifier.padding(12.dp)) { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(text = storageInfo.label, style = MaterialTheme.typography.labelMedium); Text(text = "${formatBytes(storageInfo.freeSpace)} 可用", style = MaterialTheme.typography.labelMedium) }; Spacer(Modifier.height(8.dp)); LinearProgressIndicator(progress = storageInfo.usedPercentage / 100f, modifier = Modifier.fillMaxWidth()) } } }
 
 @Composable
 fun CreateFolderDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) { var folderName by remember { mutableStateOf("") }; AlertDialog(onDismissRequest = onDismiss, title = { Text("新建文件夹") }, text = { OutlinedTextField(value = folderName, onValueChange = { folderName = it }, label = { Text("文件夹名称") }, singleLine = true) }, confirmButton = { TextButton(onClick = { onConfirm(folderName) }, enabled = folderName.isNotBlank()) { Text("创建") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }) }
