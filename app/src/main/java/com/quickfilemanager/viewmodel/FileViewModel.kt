@@ -16,13 +16,42 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class SortType { NAME_ASC, NAME_DESC, SIZE_ASC, SIZE_DESC, DATE_ASC, DATE_DESC }
+/**
+ * 文件分类枚举
+ */
+enum class FileCategory(val displayName: String, val icon: String) {
+    ALL("全部", "folder"),
+    INTERNAL("内部存储", "storage"),
+    DOWNLOADS("下载", "download"),
+    IMAGES("图片", "image"),
+    VIDEOS("视频", "video"),
+    AUDIO("音频", "audio"),
+    DOCUMENTS("文档", "document"),
+    APKS("安装包", "android"),
+    ARCHIVES("压缩包", "archive")
+}
+
+/**
+ * 排序类型枚举
+ */
+enum class SortType(val displayName: String) {
+    NAME_ASC("名称 ↑"),
+    NAME_DESC("名称 ↓"),
+    SIZE_ASC("大小 ↑"),
+    SIZE_DESC("大小 ↓"),
+    DATE_ASC("日期 ↑"),
+    DATE_DESC("日期 ↓")
+}
+
+/**
+ * 剪贴板操作类型
+ */
 enum class ClipboardAction { NONE, COPY, CUT }
-enum class FileCategory { ALL, INTERNAL, DOWNLOADS, IMAGES, VIDEOS, AUDIO, DOCUMENTS, APKS, ARCHIVES, ROOT }
 
 data class FileUiState(
     val currentPath: String = Environment.getExternalStorageDirectory().absolutePath,
     val files: List<FileItem> = emptyList(),
+    val allFiles: List<FileItem> = emptyList(), // 原始文件列表（分类过滤前）
     val selectedFiles: Set<String> = emptySet(),
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -30,29 +59,44 @@ data class FileUiState(
     val isSelectionMode: Boolean = false,
     val isOperationInProgress: Boolean = false,
     val operationProgress: OperationProgress? = null,
-    val sortType: SortType = SortType.NAME_ASC,
-    val showHiddenFiles: Boolean = false,
-    val favoritePaths: Set<String> = emptySet(),
-    val clipboardAction: ClipboardAction = ClipboardAction.NONE,
-    val clipboardPaths: Set<String> = emptySet(),
-    val clipboardTargetPath: String = "",
+    
+    // 新增功能
     val currentCategory: FileCategory = FileCategory.ALL,
-    val showSystemFiles: Boolean = false,
-    val isFirstLaunch: Boolean = true,
-    val language: String = "zh",
-    val sortAscending: Boolean = true
+    val sortType: SortType = SortType.NAME_ASC,
+    val clipboardAction: ClipboardAction = ClipboardAction.NONE,
+    val clipboardFiles: Set<String> = emptySet(),
+    val clipboardTargetPath: String = "",
+    val favoritePaths: Set<String> = emptySet(),
+    
+    // 设置相关
+    val showHiddenFiles: Boolean = false,
+    val sortAscending: Boolean = true,
+    
+    // 用户协议相关
+    val hasAcceptedAgreement: Boolean = false
 )
 
-data class OperationProgress(val current: Int, val total: Int, val fileName: String)
+data class OperationProgress(
+    val current: Int,
+    val total: Int,
+    val fileName: String
+)
 
 @HiltViewModel
-class FileViewModel @Inject constructor(private val repository: FileRepository) : ViewModel() {
+class FileViewModel @Inject constructor(
+    private val repository: FileRepository
+) : ViewModel() {
+
     private val _uiState = MutableStateFlow(FileUiState())
     val uiState: StateFlow<FileUiState> = _uiState.asStateFlow()
+
     private val _operationResult = MutableSharedFlow<OperationResult>()
     val operationResult = _operationResult.asSharedFlow()
 
-    init { loadStorageList(); loadFiles(_uiState.value.currentPath) }
+    init {
+        loadStorageList()
+        loadFiles(_uiState.value.currentPath)
+    }
 
     fun loadStorageList() {
         viewModelScope.launch {
@@ -65,101 +109,243 @@ class FileViewModel @Inject constructor(private val repository: FileRepository) 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             repository.listFiles(path).fold(
-                onSuccess = { files -> _uiState.value = _uiState.value.copy(files = filterAndSortFiles(files), currentPath = path, isLoading = false) },
-                onFailure = { e -> _uiState.value = _uiState.value.copy(error = e.message ?: "加载失败", isLoading = false) }
+                onSuccess = { files ->
+                    val sortedFiles = sortFiles(files)
+                    _uiState.value = _uiState.value.copy(
+                        files = sortedFiles,
+                        allFiles = sortedFiles,
+                        currentPath = path,
+                        isLoading = false,
+                        currentCategory = FileCategory.INTERNAL
+                    )
+                    applyCategoryFilter()
+                },
+                onFailure = { e ->
+                    _uiState.value = _uiState.value.copy(
+                        error = e.message ?: "加载失败",
+                        isLoading = false
+                    )
+                }
             )
         }
     }
 
-    fun loadCategory(category: FileCategory) {
-        val path = when (category) {
-            FileCategory.ALL -> Environment.getExternalStorageDirectory().absolutePath
-            FileCategory.INTERNAL -> Environment.getExternalStorageDirectory().absolutePath
-            FileCategory.DOWNLOADS -> Environment.getExternalStorageDirectory().absolutePath + "/Download"
-            FileCategory.IMAGES -> Environment.getExternalStorageDirectory().absolutePath + "/DCIM"
-            FileCategory.VIDEOS -> Environment.getExternalStorageDirectory().absolutePath + "/Movies"
-            FileCategory.AUDIO -> Environment.getExternalStorageDirectory().absolutePath + "/Music"
-            FileCategory.DOCUMENTS -> Environment.getExternalStorageDirectory().absolutePath + "/Documents"
-            FileCategory.APKS -> Environment.getExternalStorageDirectory().absolutePath + "/Download"
-            FileCategory.ARCHIVES -> Environment.getExternalStorageDirectory().absolutePath + "/Download"
-            FileCategory.ROOT -> "/"
-        }
+    /**
+     * 切换分类
+     */
+    fun selectCategory(category: FileCategory) {
         _uiState.value = _uiState.value.copy(currentCategory = category)
-        loadFiles(path)
+        applyCategoryFilter()
     }
 
-    fun refreshCurrentPath() { loadFiles(_uiState.value.currentPath) }
-
-    private fun filterAndSortFiles(files: List<FileItem>): List<FileItem> {
-        val state = _uiState.value
-        var filtered = if (state.showHiddenFiles) files else files.filter { !it.name.startsWith(".") }
+    /**
+     * 根据分类过滤文件
+     */
+    private fun applyCategoryFilter() {
+        val allFiles = _uiState.value.allFiles
+        val category = _uiState.value.currentCategory
         
-        // 分类过滤
-        if (state.currentCategory == FileCategory.IMAGES) filtered = filtered.filter { it.extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp") }
-        else if (state.currentCategory == FileCategory.VIDEOS) filtered = filtered.filter { it.extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv") }
-        else if (state.currentCategory == FileCategory.AUDIO) filtered = filtered.filter { it.extension in listOf("mp3", "wav", "ogg", "flac", "aac", "m4a") }
-        else if (state.currentCategory == FileCategory.DOCUMENTS) filtered = filtered.filter { it.extension in listOf("pdf", "doc", "docx", "txt", "xls", "xlsx", "ppt", "pptx") }
-        else if (state.currentCategory == FileCategory.APKS) filtered = filtered.filter { it.extension == "apk" }
-        else if (state.currentCategory == FileCategory.ARCHIVES) filtered = filtered.filter { it.extension in listOf("zip", "rar", "7z", "tar", "gz") }
-        
-        val dirFirst = compareBy<FileItem, Boolean> { !it.isDirectory }
-        val sortBy = when (state.sortType) {
-            SortType.NAME_ASC -> compareBy { it.name.lowercase() }
-            SortType.NAME_DESC -> compareByDescending { it.name.lowercase() }
-            SortType.SIZE_ASC -> compareBy { it.size }
-            SortType.SIZE_DESC -> compareByDescending { it.size }
-            SortType.DATE_ASC -> compareBy { it.lastModified }
-            SortType.DATE_DESC -> compareByDescending { it.lastModified }
+        val filteredFiles = when (category) {
+            FileCategory.ALL -> allFiles
+            FileCategory.INTERNAL -> allFiles
+            FileCategory.DOWNLOADS -> allFiles.filter { 
+                it.path.contains("/Download", ignoreCase = true) || 
+                it.path.contains("/download", ignoreCase = true)
+            }
+            FileCategory.IMAGES -> allFiles.filter { 
+                it.extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
+            }
+            FileCategory.VIDEOS -> allFiles.filter { 
+                it.extension in listOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "3gp", "webm")
+            }
+            FileCategory.AUDIO -> allFiles.filter { 
+                it.extension in listOf("mp3", "wav", "ogg", "flac", "aac", "m4a", "amr")
+            }
+            FileCategory.DOCUMENTS -> allFiles.filter { 
+                it.extension in listOf("pdf", "doc", "docx", "txt", "rtf", "xls", "xlsx", "ppt", "pptx", "odt")
+            }
+            FileCategory.APKS -> allFiles.filter { it.extension == "apk" }
+            FileCategory.ARCHIVES -> allFiles.filter { 
+                it.extension in listOf("zip", "rar", "7z", "tar", "gz", "bz2")
+            }
         }
-        return filtered.sortedWith(dirFirst.then(sortBy))
+        
+        _uiState.value = _uiState.value.copy(files = sortFiles(filteredFiles))
     }
 
-    fun setSortType(sortType: SortType) { _uiState.value = _uiState.value.copy(sortType = sortType); loadFiles(_uiState.value.currentPath) }
-    fun toggleHiddenFiles() { _uiState.value = _uiState.value.copy(showHiddenFiles = !_uiState.value.showHiddenFiles); loadFiles(_uiState.value.currentPath) }
-    fun toggleShowSystemFiles() { _uiState.value = _uiState.value.copy(showSystemFiles = !_uiState.value.showSystemFiles); loadFiles(_uiState.value.currentPath) }
-
-    fun navigateToFolder(path: String) { loadFiles(path); exitSelectionMode() }
-    fun navigateUp(): Boolean {
-        val parentPath = repository.getParentPath(_uiState.value.currentPath)
-        return if (parentPath != null && !repository.isRootPath(_uiState.value.currentPath)) { loadFiles(parentPath); exitSelectionMode(); true } else false
+    /**
+     * 排序文件
+     */
+    private fun sortFiles(files: List<FileItem>): List<FileItem> {
+        val sortType = _uiState.value.sortType
+        return when (sortType) {
+            SortType.NAME_ASC -> files.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+            SortType.NAME_DESC -> files.sortedWith(compareBy({ !it.isDirectory }, { -it.name.lowercase().compareTo(it.name) }))
+            SortType.SIZE_ASC -> files.sortedWith(compareBy({ !it.isDirectory }, { it.size }))
+            SortType.SIZE_DESC -> files.sortedWith(compareBy({ !it.isDirectory }, { -it.size }))
+            SortType.DATE_ASC -> files.sortedWith(compareBy({ !it.isDirectory }, { it.lastModified }))
+            SortType.DATE_DESC -> files.sortedWith(compareBy({ !it.isDirectory }, { -it.lastModified }))
+        }
     }
 
-    fun toggleSelectionMode() { _uiState.value = _uiState.value.copy(isSelectionMode = !_uiState.value.isSelectionMode, selectedFiles = emptySet()) }
-    fun exitSelectionMode() { _uiState.value = _uiState.value.copy(isSelectionMode = false, selectedFiles = emptySet()) }
-    fun toggleFileSelection(path: String) {
-        val current = _uiState.value.selectedFiles
-        _uiState.value = _uiState.value.copy(selectedFiles = if (current.contains(path)) current - path else current + path)
+    /**
+     * 设置排序方式
+     */
+    fun setSortType(sortType: SortType) {
+        _uiState.value = _uiState.value.copy(sortType = sortType)
+        _uiState.value = _uiState.value.copy(
+            files = sortFiles(_uiState.value.files),
+            allFiles = sortFiles(_uiState.value.allFiles)
+        )
     }
-    fun selectAll() { _uiState.value = _uiState.value.copy(selectedFiles = _uiState.value.files.map { it.path }.toSet()) }
-    fun deselectAll() { _uiState.value = _uiState.value.copy(selectedFiles = emptySet()) }
 
-    fun toggleFavorite(path: String) {
-        val favorites = _uiState.value.favoritePaths.toMutableSet()
-        if (favorites.contains(path)) favorites.remove(path) else favorites.add(path)
-        _uiState.value = _uiState.value.copy(favoritePaths = favorites)
+    /**
+     * 复制文件到剪贴板
+     */
+    fun copyToClipboard(paths: Set<String>) {
+        _uiState.value = _uiState.value.copy(
+            clipboardAction = ClipboardAction.COPY,
+            clipboardFiles = paths,
+            clipboardTargetPath = ""
+        )
+        exitSelectionMode()
     }
-    fun isFavorite(path: String) = _uiState.value.favoritePaths.contains(path)
 
-    fun copyToClipboard(paths: Set<String>) { _uiState.value = _uiState.value.copy(clipboardAction = ClipboardAction.COPY, clipboardPaths = paths, clipboardTargetPath = _uiState.value.currentPath) }
-    fun cutToClipboard(paths: Set<String>) { _uiState.value = _uiState.value.copy(clipboardAction = ClipboardAction.CUT, clipboardPaths = paths, clipboardTargetPath = _uiState.value.currentPath) }
-    fun pasteFromClipboard(targetPath: String? = null) {
-        val state = _uiState.value
-        if (state.clipboardAction == ClipboardAction.NONE || state.clipboardPaths.isEmpty()) return
-        val destination = targetPath ?: state.currentPath
+    /**
+     * 剪切文件到剪贴板
+     */
+    fun cutToClipboard(paths: Set<String>) {
+        _uiState.value = _uiState.value.copy(
+            clipboardAction = ClipboardAction.CUT,
+            clipboardFiles = paths,
+            clipboardTargetPath = ""
+        )
+        exitSelectionMode()
+    }
+
+    /**
+     * 粘贴文件
+     */
+    fun pasteFiles(targetPath: String) {
         viewModelScope.launch {
-            if (state.clipboardAction == ClipboardAction.COPY) copyFiles(state.clipboardPaths, destination)
-            else { state.clipboardPaths.forEach { _operationResult.emit(repository.move(it, destination)) }; loadFiles(_uiState.value.currentPath) }
-            _uiState.value = _uiState.value.copy(clipboardAction = ClipboardAction.NONE, clipboardPaths = emptySet())
+            val clipboardFiles = _uiState.value.clipboardFiles
+            val action = _uiState.value.clipboardAction
+            
+            clipboardFiles.forEach { sourcePath ->
+                when (action) {
+                    ClipboardAction.COPY -> {
+                        repository.copy(sourcePath, targetPath).collect { result ->
+                            _operationResult.emit(result)
+                        }
+                    }
+                    ClipboardAction.CUT -> {
+                        val result = repository.move(sourcePath, targetPath)
+                        _operationResult.emit(result)
+                    }
+                    ClipboardAction.NONE -> { /* 无操作 */ }
+                }
+            }
+            
+            // 清空剪贴板
+            clearClipboard()
+            loadFiles(_uiState.value.currentPath)
         }
     }
-    fun clearClipboard() { _uiState.value = _uiState.value.copy(clipboardAction = ClipboardAction.NONE, clipboardPaths = emptySet()) }
+
+    /**
+     * 清空剪贴板
+     */
+    fun clearClipboard() {
+        _uiState.value = _uiState.value.copy(
+            clipboardAction = ClipboardAction.NONE,
+            clipboardFiles = emptySet(),
+            clipboardTargetPath = ""
+        )
+    }
+
+    /**
+     * 切换收藏状态
+     */
+    fun toggleFavorite(path: String) {
+        val currentFavorites = _uiState.value.favoritePaths
+        val newFavorites = if (currentFavorites.contains(path)) {
+            currentFavorites - path
+        } else {
+            currentFavorites + path
+        }
+        _uiState.value = _uiState.value.copy(favoritePaths = newFavorites)
+    }
+
+    /**
+     * 检查是否有剪贴板内容
+     */
+    fun hasClipboardContent(): Boolean = _uiState.value.clipboardAction != ClipboardAction.NONE
+
+    /**
+     * 接受用户协议
+     */
+    fun acceptAgreement() {
+        _uiState.value = _uiState.value.copy(hasAcceptedAgreement = true)
+    }
+
+    fun navigateToFolder(path: String) {
+        loadFiles(path)
+        exitSelectionMode()
+    }
+
+    fun navigateUp(): Boolean {
+        val currentPath = _uiState.value.currentPath
+        val parentPath = repository.getParentPath(currentPath)
+        return if (parentPath != null && !repository.isRootPath(currentPath)) {
+            loadFiles(parentPath)
+            exitSelectionMode()
+            true
+        } else {
+            false
+        }
+    }
+
+    fun toggleSelectionMode() {
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = !_uiState.value.isSelectionMode,
+            selectedFiles = emptySet()
+        )
+    }
+
+    fun exitSelectionMode() {
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = false,
+            selectedFiles = emptySet()
+        )
+    }
+
+    fun toggleFileSelection(path: String) {
+        val currentSelected = _uiState.value.selectedFiles
+        val newSelected = if (currentSelected.contains(path)) {
+            currentSelected - path
+        } else {
+            currentSelected + path
+        }
+        _uiState.value = _uiState.value.copy(selectedFiles = newSelected)
+    }
+
+    fun selectAll() {
+        val allPaths = _uiState.value.files.map { it.path }.toSet()
+        _uiState.value = _uiState.value.copy(selectedFiles = allPaths)
+    }
+
+    fun deselectAll() {
+        _uiState.value = _uiState.value.copy(selectedFiles = emptySet())
+    }
 
     fun deleteFiles(paths: Set<String>) {
         viewModelScope.launch {
             paths.forEach { path ->
                 repository.delete(path).collect { result ->
                     _operationResult.emit(result)
-                    if (result is OperationResult.Success) loadFiles(_uiState.value.currentPath)
+                    if (result is OperationResult.Success) {
+                        loadFiles(_uiState.value.currentPath)
+                    }
                 }
             }
             exitSelectionMode()
@@ -170,7 +356,9 @@ class FileViewModel @Inject constructor(private val repository: FileRepository) 
         viewModelScope.launch {
             val result = repository.rename(path, newName)
             _operationResult.emit(result)
-            if (result is OperationResult.Success) loadFiles(_uiState.value.currentPath)
+            if (result is OperationResult.Success) {
+                loadFiles(_uiState.value.currentPath)
+            }
         }
     }
 
@@ -178,7 +366,9 @@ class FileViewModel @Inject constructor(private val repository: FileRepository) 
         viewModelScope.launch {
             val result = repository.createFolder(_uiState.value.currentPath, name)
             _operationResult.emit(result)
-            if (result is OperationResult.Success) loadFiles(_uiState.value.currentPath)
+            if (result is OperationResult.Success) {
+                loadFiles(_uiState.value.currentPath)
+            }
         }
     }
 
@@ -187,8 +377,23 @@ class FileViewModel @Inject constructor(private val repository: FileRepository) 
             sourcePaths.forEach { sourcePath ->
                 repository.copy(sourcePath, targetPath).collect { result ->
                     when (result) {
-                        is OperationResult.Progress -> _uiState.value = _uiState.value.copy(isOperationInProgress = true, operationProgress = OperationProgress(result.current, result.total, result.fileName))
-                        is OperationResult.Success, is OperationResult.Error -> { _uiState.value = _uiState.value.copy(isOperationInProgress = false, operationProgress = null); _operationResult.emit(result) }
+                        is OperationResult.Progress -> {
+                            _uiState.value = _uiState.value.copy(
+                                isOperationInProgress = true,
+                                operationProgress = OperationProgress(
+                                    result.current,
+                                    result.total,
+                                    result.fileName
+                                )
+                            )
+                        }
+                        is OperationResult.Success, is OperationResult.Error -> {
+                            _uiState.value = _uiState.value.copy(
+                                isOperationInProgress = false,
+                                operationProgress = null
+                            )
+                            _operationResult.emit(result)
+                        }
                     }
                 }
             }
@@ -196,16 +401,36 @@ class FileViewModel @Inject constructor(private val repository: FileRepository) 
         }
     }
 
-    fun searchFiles(query: String) {
-        if (query.isBlank()) { loadFiles(_uiState.value.currentPath); return }
+    fun moveFiles(sourcePaths: Set<String>, targetPath: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            val filtered = _uiState.value.files.filter { it.name.contains(query, ignoreCase = true) }
-            _uiState.value = _uiState.value.copy(files = filtered, isLoading = false)
+            sourcePaths.forEach { sourcePath ->
+                val result = repository.move(sourcePath, targetPath)
+                _operationResult.emit(result)
+            }
+            loadFiles(_uiState.value.currentPath)
+            exitSelectionMode()
         }
     }
 
-    fun setFirstLaunchComplete() { _uiState.value = _uiState.value.copy(isFirstLaunch = false) }
-    fun setLanguage(lang: String) { _uiState.value = _uiState.value.copy(language = lang) }
-    fun clearError() { _uiState.value = _uiState.value.copy(error = null) }
+    fun searchFiles(query: String) {
+        if (query.isBlank()) {
+            loadFiles(_uiState.value.currentPath)
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            val currentFiles = _uiState.value.files
+            val filteredFiles = currentFiles.filter {
+                it.name.contains(query, ignoreCase = true)
+            }
+            _uiState.value = _uiState.value.copy(
+                files = filteredFiles,
+                isLoading = false
+            )
+        }
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
+    }
 }
