@@ -31,8 +31,10 @@ fun FileListItem(
     file: FileItem,
     isSelected: Boolean,
     isSelectionMode: Boolean,
+    isFavorite: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onFavoriteClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -132,6 +134,17 @@ fun FileListItem(
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            
+            // 收藏图标
+            if (!file.isDirectory && onFavoriteClick != null && !isSelectionMode) {
+                IconButton(onClick = onFavoriteClick) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (isFavorite) "取消收藏" else "收藏",
+                        tint = if (isFavorite) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
