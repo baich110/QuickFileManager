@@ -373,7 +373,7 @@ fun StorageIndicator(
             }
             Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(
-                progress = { storageInfo.usedPercentage / 100f },
+                progress = storageInfo.usedPercentage / 100f,
                 modifier = Modifier.fillMaxWidth()
             )
         }
